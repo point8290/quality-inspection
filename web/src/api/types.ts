@@ -54,6 +54,24 @@ export type PageMeta = {
   totalPages: number;
 };
 
+export type InspectionFilters = {
+  status?: InspectionStatus;
+  severityCode?: string;
+  defectTypeCode?: string;
+  dateFrom?: string;
+  dateTo?: string;
+};
+
+export type SortBy = 'createdAt' | 'inspectionDate' | 'severity';
+export type SortDir = 'asc' | 'desc';
+
+export type InspectionSort = {
+  sortBy: SortBy;
+  sortDir: SortDir;
+};
+
+export type ListQuery = InspectionFilters & InspectionSort & { page: number };
+
 export type StatusCounts = {
   OPEN: number;
   RESOLVED: number;

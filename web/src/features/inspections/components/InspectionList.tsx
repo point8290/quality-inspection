@@ -1,24 +1,23 @@
 import { useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import {
+  selectHasActiveFilters,
   selectInspections,
   selectListError,
   selectListStatus,
   selectPageMeta,
 } from '../selectors';
-import { listRequested } from '../slice';
+import { filtersCleared, listRequested, pageChanged } from '../slice';
+import { FilterBar } from './FilterBar';
 import { InspectionCard } from './InspectionCard';
 
-export function InspectionList({ onSelect }: { onSelect: (id: string) => void }) {
+function Results({ onSelect }: { onSelect: (id: string) => void }) {
   const dispatch = useAppDispatch();
   const inspections = useAppSelector(selectInspections);
   const status = useAppSelector(selectListStatus);
   const error = useAppSelector(selectListError);
   const meta = useAppSelector(selectPageMeta);
-
-  useEffect(() => {
-    dispatch(listRequested(1));
-  }, [dispatch]);
+  const hasActiveFilters = useAppSelector(selectHasActiveFilters);
 
   if (status === 'loading' && inspections.length === 0) {
     return <p className="p-6 text-center text-slate-500">Loading inspections…</p>;
@@ -41,7 +40,19 @@ export function InspectionList({ onSelect }: { onSelect: (id: string) => void })
   }
 
   if (inspections.length === 0) {
-    return (
+    // "Nothing matches" and "nothing logged yet" are different problems with different fixes.
+    return hasActiveFilters ? (
+      <div className="p-6 text-center">
+        <p className="font-medium text-slate-700">No inspections match these filters</p>
+        <button
+          type="button"
+          onClick={() => dispatch(filtersCleared())}
+          className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+        >
+          Clear filters
+        </button>
+      </div>
+    ) : (
       <div className="p-6 text-center">
         <p className="font-medium text-slate-700">No inspections yet</p>
         <p className="mt-1 text-sm text-slate-500">Tap ＋ to log the first one.</p>
@@ -64,7 +75,7 @@ export function InspectionList({ onSelect }: { onSelect: (id: string) => void })
           <button
             type="button"
             disabled={meta.page <= 1}
-            onClick={() => dispatch(listRequested(meta.page - 1))}
+            onClick={() => dispatch(pageChanged(meta.page - 1))}
             className="rounded-lg border border-slate-300 px-4 py-2 disabled:opacity-40"
           >
             Previous
@@ -75,7 +86,7 @@ export function InspectionList({ onSelect }: { onSelect: (id: string) => void })
           <button
             type="button"
             disabled={meta.page >= meta.totalPages}
-            onClick={() => dispatch(listRequested(meta.page + 1))}
+            onClick={() => dispatch(pageChanged(meta.page + 1))}
             className="rounded-lg border border-slate-300 px-4 py-2 disabled:opacity-40"
           >
             Next
@@ -83,5 +94,20 @@ export function InspectionList({ onSelect }: { onSelect: (id: string) => void })
         </nav>
       )}
     </div>
+  );
+}
+
+export function InspectionList({ onSelect }: { onSelect: (id: string) => void }) {
+  const dispatch = useAppDispatch();
+
+  useEffect(() => {
+    dispatch(listRequested());
+  }, [dispatch]);
+
+  return (
+    <>
+      <FilterBar />
+      <Results onSelect={onSelect} />
+    </>
   );
 }

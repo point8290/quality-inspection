@@ -1,6 +1,21 @@
+import type { ListQuery } from '../../api/types';
 import type { RootState } from '../../app/store';
 
 export const selectInspections = (state: RootState) => state.inspections.items;
+export const selectFilters = (state: RootState) => state.inspections.filters;
+export const selectSort = (state: RootState) => state.inspections.sort;
+
+/** The one place the request query is assembled — the saga reads exactly this. */
+export const selectListQuery = (state: RootState): ListQuery => ({
+  ...state.inspections.filters,
+  ...state.inspections.sort,
+  page: state.inspections.page,
+});
+
+/** Lets the empty state say "nothing matches your filters" rather than "nothing logged yet". */
+export const selectHasActiveFilters = (state: RootState) =>
+  Object.values(state.inspections.filters).some((value) => value !== undefined && value !== '');
+
 export const selectListStatus = (state: RootState) => state.inspections.listStatus;
 export const selectListError = (state: RootState) => state.inspections.listError;
 export const selectPageMeta = (state: RootState) => state.inspections.meta;

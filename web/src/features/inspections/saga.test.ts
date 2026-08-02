@@ -1,11 +1,18 @@
-import { call, put } from 'redux-saga/effects';
+import { call, put, select } from 'redux-saga/effects';
 import { describe, expect, it } from 'vitest';
 import { ApiRequestError } from '../../api/client';
-import { resolveInspection } from '../../api/inspections';
-import type { Inspection } from '../../api/types';
+import { listInspections, resolveInspection } from '../../api/inspections';
+import type { Inspection, ListQuery } from '../../api/types';
 import { summaryRequested } from '../summary/slice';
-import { submitResolve } from './saga';
-import { listRequested, resolveConflicted, resolveRequested, resolveSucceeded } from './slice';
+import { fetchList, submitResolve } from './saga';
+import { selectListQuery } from './selectors';
+import {
+  listRequested,
+  listSucceeded,
+  resolveConflicted,
+  resolveRequested,
+  resolveSucceeded,
+} from './slice';
 
 const resolved = {
   id: 'abc',
@@ -15,6 +22,37 @@ const resolved = {
 
 // Sagas are generators, so a test can walk them one effect at a time: no network, no
 // mocking library — just assert the plain objects the saga yields.
+describe('fetchList saga', () => {
+  const query: ListQuery = {
+    page: 2,
+    status: 'OPEN',
+    severityCode: 'CRITICAL',
+    sortBy: 'severity',
+    sortDir: 'asc',
+  };
+
+  it('reads the composed query from state and sends it to the API', () => {
+    const saga = fetchList();
+
+    // The reducer has already applied the filter change, so the saga never has to
+    // reassemble the query from an action payload.
+    expect(saga.next().value).toEqual(select(selectListQuery));
+    expect(saga.next(query).value).toEqual(call(listInspections, query));
+  });
+
+  it('stores the rows together with the pagination meta', () => {
+    const saga = fetchList();
+    saga.next();
+    saga.next(query);
+
+    const meta = { page: 2, pageSize: 20, total: 40, totalPages: 2 };
+    const effect = saga.next({ data: [], meta });
+
+    expect(effect.value).toEqual(put(listSucceeded({ items: [], meta })));
+    expect(saga.next().done).toBe(true);
+  });
+});
+
 describe('submitResolve saga', () => {
   it('calls the API, then updates the row and refreshes the summary', () => {
     const saga = submitResolve(resolveRequested({ id: 'abc', resolutionNote: 'Fixed' }));

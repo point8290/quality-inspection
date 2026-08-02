@@ -1,11 +1,23 @@
 import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
-import type { ApiErrorDetail, CreateInspectionPayload, Inspection, PageMeta } from '../../api/types';
+import type {
+  ApiErrorDetail,
+  CreateInspectionPayload,
+  Inspection,
+  InspectionFilters,
+  InspectionSort,
+  PageMeta,
+} from '../../api/types';
+
+/** Newest first: what a supervisor wants to see on arriving at the list. */
+const DEFAULT_SORT: InspectionSort = { sortBy: 'createdAt', sortDir: 'desc' };
 
 type InspectionsState = {
   items: Inspection[];
   meta: PageMeta | null;
   page: number;
+  filters: InspectionFilters;
+  sort: InspectionSort;
   listStatus: 'idle' | 'loading' | 'ready' | 'failed';
   listError: string | null;
   createStatus: 'idle' | 'submitting' | 'failed';
@@ -26,6 +38,8 @@ const initialState: InspectionsState = {
   items: [],
   meta: null,
   page: 1,
+  filters: {},
+  sort: DEFAULT_SORT,
   listStatus: 'idle',
   listError: null,
   createStatus: 'idle',
@@ -40,8 +54,34 @@ const inspectionsSlice = createSlice({
   name: 'inspections',
   initialState,
   reducers: {
-    listRequested(state, action: PayloadAction<number | undefined>) {
-      state.page = action.payload ?? state.page;
+    // Any of these four actions changes the query, and the saga watches all of them — so
+    // "refetch the list" is never something a component has to remember to dispatch.
+    listRequested(state) {
+      state.listStatus = 'loading';
+      state.listError = null;
+    },
+    filtersChanged(state, action: PayloadAction<InspectionFilters>) {
+      // Merged, so a filter bar control only has to send the field it owns.
+      state.filters = { ...state.filters, ...action.payload };
+      // Page 3 of the old filter is meaningless under the new one.
+      state.page = 1;
+      state.listStatus = 'loading';
+      state.listError = null;
+    },
+    filtersCleared(state) {
+      state.filters = {};
+      state.page = 1;
+      state.listStatus = 'loading';
+      state.listError = null;
+    },
+    sortChanged(state, action: PayloadAction<InspectionSort>) {
+      state.sort = action.payload;
+      state.page = 1;
+      state.listStatus = 'loading';
+      state.listError = null;
+    },
+    pageChanged(state, action: PayloadAction<number>) {
+      state.page = action.payload;
       state.listStatus = 'loading';
       state.listError = null;
     },
@@ -118,6 +158,10 @@ export const {
   listRequested,
   listSucceeded,
   listFailed,
+  filtersChanged,
+  filtersCleared,
+  sortChanged,
+  pageChanged,
   createRequested,
   createSucceeded,
   createFailed,
