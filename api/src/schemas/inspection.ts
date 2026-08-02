@@ -26,11 +26,38 @@ export const createInspectionSchema = z.object({
 
 export type CreateInspectionInput = z.infer<typeof createInspectionSchema>;
 
-export const listInspectionsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  // Capped so one request can't ask for the whole table.
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-});
+export const listInspectionsQuerySchema = z
+  .object({
+    page: z.coerce.number().int().min(1).default(1),
+    // Capped so one request can't ask for the whole table.
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+
+    // Filters. Codes are checked against the lookup tables in the service — one rule for
+    // codes across create and filter, even though a filter conceptually only narrows.
+    status: z.enum(['OPEN', 'RESOLVED']).optional(),
+    severityCode: z.string().trim().min(1).optional(),
+    defectTypeCode: z.string().trim().min(1).optional(),
+    dateFrom: calendarDate.optional(),
+    dateTo: calendarDate.optional(),
+
+    // sortDir means the same thing on every column, including severity, where it applies to
+    // Severity.rank — so asc is most-severe-first. The UI labels it rather than exposing this.
+    sortBy: z.enum(['inspectionDate', 'createdAt', 'severity']).optional(),
+    sortDir: z.enum(['asc', 'desc']).optional(),
+
+    // Delta pull for the offline mirror (DESIGN.md §4).
+    updatedSince: z.iso.datetime().optional(),
+  })
+  .refine((query) => !query.dateFrom || !query.dateTo || query.dateFrom <= query.dateTo, {
+    message: 'dateTo must be on or after dateFrom',
+    path: ['dateTo'],
+  })
+  .refine((query) => !query.updatedSince || (!query.sortBy && !query.sortDir), {
+    // Sync mode owns its ordering; silently ignoring a sort the caller asked for is worse
+    // than telling them the two don't combine.
+    message: 'updatedSince is a sync mode that orders by updatedAt — remove sortBy and sortDir',
+    path: ['sortBy'],
+  });
 
 export type ListInspectionsQuery = z.infer<typeof listInspectionsQuerySchema>;
 

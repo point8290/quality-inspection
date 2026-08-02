@@ -25,6 +25,24 @@ export async function backdate(id: string, createdAt: Date) {
   await Inspection.update({ createdAt }, { where: { id }, silent: true });
 }
 
+/** The literal format Sequelize's SQLite dialect writes and reads: '2026-07-10 12:00:00.000 +00:00'. */
+function toSqliteDate(date: Date) {
+  return `${date.toISOString().replace('T', ' ').replace('Z', '')} +00:00`;
+}
+
+/**
+ * Sets updatedAt directly, so delta-pull tests can place rows on either side of a cursor
+ * instead of racing the clock.
+ *
+ * Raw SQL rather than Model.update, because `silent: true` — the only way to stop Sequelize
+ * overwriting updatedAt with "now" — also discards an updatedAt passed in the values.
+ */
+export async function setUpdatedAt(id: string, updatedAt: Date) {
+  await sequelize.query('UPDATE inspections SET updatedAt = ? WHERE id = ?', {
+    replacements: [toSqliteDate(updatedAt), id],
+  });
+}
+
 export async function closeDb() {
   await sequelize.close();
 }
