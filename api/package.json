@@ -1,0 +1,36 @@
+{
+  "name": "quality-inspection-tracker-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Express + Sequelize API for the Quality Inspection Tracker",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "migrate": "sequelize-cli db:migrate",
+    "migrate:undo": "sequelize-cli db:migrate:undo",
+    "seed": "sequelize-cli db:seed:all",
+    "db:reset:test": "node -e \"require('fs').rmSync('data/test.sqlite', { force: true })\"",
+    "pretest": "npm run db:reset:test && sequelize-cli db:migrate --env test && sequelize-cli db:seed:all --env test",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "sequelize": "^6.37.7",
+    "sqlite3": "^5.1.7",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "@types/supertest": "^6.0.2",
+    "sequelize-cli": "^6.6.2",
+    "supertest": "^7.0.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
