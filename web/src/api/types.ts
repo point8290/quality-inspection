@@ -54,6 +54,18 @@ export type PageMeta = {
   totalPages: number;
 };
 
+export type StatusCounts = {
+  OPEN: number;
+  RESOLVED: number;
+};
+
+export type Summary = {
+  total: number;
+  byStatus: StatusCounts;
+  /** Keyed by severity code; labels and order come from the reference data we already hold. */
+  bySeverity: Record<string, StatusCounts>;
+};
+
 export type CreateInspectionPayload = {
   /** Minted on the device, so replaying a queued create can't duplicate (DESIGN.md §5). */
   id: string;

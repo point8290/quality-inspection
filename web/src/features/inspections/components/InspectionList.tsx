@@ -9,7 +9,7 @@ import {
 import { listRequested } from '../slice';
 import { InspectionCard } from './InspectionCard';
 
-export function InspectionList() {
+export function InspectionList({ onSelect }: { onSelect: (id: string) => void }) {
   const dispatch = useAppDispatch();
   const inspections = useAppSelector(selectInspections);
   const status = useAppSelector(selectListStatus);
@@ -52,7 +52,11 @@ export function InspectionList() {
   return (
     <div className="flex flex-col gap-3 p-4">
       {inspections.map((inspection) => (
-        <InspectionCard key={inspection.id} inspection={inspection} />
+        <InspectionCard
+          key={inspection.id}
+          inspection={inspection}
+          onSelect={() => onSelect(inspection.id)}
+        />
       ))}
 
       {meta && meta.totalPages > 1 && (

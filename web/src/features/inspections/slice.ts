@@ -12,6 +12,14 @@ type InspectionsState = {
   createError: string | null;
   /** Per-field messages straight from the server's 400 envelope, keyed by field path. */
   createFieldErrors: ApiErrorDetail[];
+  resolveStatus: 'idle' | 'submitting' | 'failed';
+  resolveError: string | null;
+  /**
+   * A 409 from an *online* resolve means someone else got there first — a real conflict
+   * worth telling the user about, unlike the offline replay path where the same status means
+   * "my own queued op already landed" (DESIGN.md §5.2).
+   */
+  resolveConflict: boolean;
 };
 
 const initialState: InspectionsState = {
@@ -23,6 +31,9 @@ const initialState: InspectionsState = {
   createStatus: 'idle',
   createError: null,
   createFieldErrors: [],
+  resolveStatus: 'idle',
+  resolveError: null,
+  resolveConflict: false,
 };
 
 const inspectionsSlice = createSlice({
@@ -69,6 +80,37 @@ const inspectionsSlice = createSlice({
       state.createError = null;
       state.createFieldErrors = [];
     },
+
+    resolveRequested(state, _action: PayloadAction<{ id: string; resolutionNote: string }>) {
+      state.resolveStatus = 'submitting';
+      state.resolveError = null;
+      state.resolveConflict = false;
+    },
+    resolveSucceeded(state, action: PayloadAction<Inspection>) {
+      // Replace the row in place so the open list updates without waiting for the refetch.
+      const index = state.items.findIndex((item) => item.id === action.payload.id);
+      if (index !== -1) {
+        state.items[index] = action.payload;
+      }
+      state.resolveStatus = 'idle';
+      state.resolveError = null;
+      state.resolveConflict = false;
+    },
+    resolveConflicted(state) {
+      state.resolveStatus = 'failed';
+      state.resolveError = 'Already resolved by someone else — refreshing.';
+      state.resolveConflict = true;
+    },
+    resolveFailed(state, action: PayloadAction<string>) {
+      state.resolveStatus = 'failed';
+      state.resolveError = action.payload;
+      state.resolveConflict = false;
+    },
+    resolveFormReset(state) {
+      state.resolveStatus = 'idle';
+      state.resolveError = null;
+      state.resolveConflict = false;
+    },
   },
 });
 
@@ -80,6 +122,11 @@ export const {
   createSucceeded,
   createFailed,
   createFormReset,
+  resolveRequested,
+  resolveSucceeded,
+  resolveConflicted,
+  resolveFailed,
+  resolveFormReset,
 } = inspectionsSlice.actions;
 
 export const inspectionsReducer = inspectionsSlice.reducer;
