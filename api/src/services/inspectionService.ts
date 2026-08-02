@@ -1,6 +1,6 @@
 import { UniqueConstraintError } from 'sequelize';
-import { ErrorDetail, notFoundError, validationError } from '../lib/errors';
-import { DefectType, Inspection, Severity } from '../models';
+import { alreadyResolvedError, ErrorDetail, notFoundError, validationError } from '../lib/errors';
+import { DefectType, INSPECTION_STATUS, Inspection, Severity } from '../models';
 import { CreateInspectionInput, ListInspectionsQuery } from '../schemas/inspection';
 
 // Every read includes both relations, because the serializer turns them into codes.
@@ -95,6 +95,42 @@ export async function getInspection(id: string) {
 
   if (!inspection) {
     throw notFoundError(`No inspection with id "${id}"`);
+  }
+
+  return inspection;
+}
+
+/**
+ * Both resolve invariants live here, not in the UI (DESIGN.md §3.2): the note is mandatory
+ * (enforced by the schema) and an inspection resolves exactly once.
+ *
+ * The status check and the write are ONE conditional UPDATE rather than a read followed by a
+ * save — with a read-then-write, two supervisors tapping at the same moment could both see
+ * OPEN and both write. Zero rows affected *is* the conflict signal; the database arbitrates.
+ */
+export async function resolveInspection(id: string, resolutionNote: string) {
+  const [affectedRows] = await Inspection.update(
+    {
+      status: INSPECTION_STATUS.RESOLVED,
+      resolutionNote,
+      // Server-set, always — a resolvedAt in the request body is ignored.
+      resolvedAt: new Date(),
+    },
+    { where: { id, status: INSPECTION_STATUS.OPEN } },
+  );
+
+  if (affectedRows === 0) {
+    // Only on the failure path do we pay for a second read, to say *why* it failed.
+    const existing = await findInspection(id);
+    if (!existing) {
+      throw notFoundError(`No inspection with id "${id}"`);
+    }
+    throw alreadyResolvedError(`Inspection "${id}" is already resolved`);
+  }
+
+  const inspection = await findInspection(id);
+  if (!inspection) {
+    throw new Error(`Inspection ${id} vanished immediately after being resolved`);
   }
 
   return inspection;

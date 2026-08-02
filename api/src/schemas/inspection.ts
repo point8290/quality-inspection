@@ -37,3 +37,13 @@ export type ListInspectionsQuery = z.infer<typeof listInspectionsQuerySchema>;
 export const inspectionIdParamSchema = z.object({
   id: z.uuid('Must be a UUID'),
 });
+
+/**
+ * The resolution note is mandatory (DESIGN.md §1). Trimming first is what makes "mandatory"
+ * mean something a human actually wrote — "   " must not satisfy it.
+ */
+export const resolveInspectionSchema = z.object({
+  resolutionNote: z.string().trim().min(1, 'A resolution note is required').max(1000),
+});
+
+export type ResolveInspectionInput = z.infer<typeof resolveInspectionSchema>;

@@ -6,8 +6,15 @@ import {
   createInspectionSchema,
   inspectionIdParamSchema,
   listInspectionsQuerySchema,
+  resolveInspectionSchema,
 } from '../schemas/inspection';
-import { createInspection, getInspection, listInspections } from '../services/inspectionService';
+import {
+  createInspection,
+  getInspection,
+  listInspections,
+  resolveInspection,
+} from '../services/inspectionService';
+import { getSummary } from '../services/summaryService';
 
 export const inspectionsRouter = Router();
 
@@ -32,8 +39,27 @@ inspectionsRouter.get(
   }),
 );
 
-// Phase 2 note: GET /summary must be registered ABOVE this route, or ':id' will swallow the
-// literal path "summary" and reject it as a malformed UUID.
+// MUST stay above '/:id': Express matches in registration order, so the param route would
+// otherwise swallow the literal path "summary" and reject it as a malformed UUID.
+inspectionsRouter.get(
+  '/summary',
+  asyncRoute(async (_req, res) => {
+    const summary = await getSummary();
+    res.json({ data: summary });
+  }),
+);
+
+inspectionsRouter.patch(
+  '/:id/resolve',
+  asyncRoute(async (req, res) => {
+    const { id } = parseOrThrow(inspectionIdParamSchema, req.params);
+    const { resolutionNote } = parseOrThrow(resolveInspectionSchema, req.body);
+    const inspection = await resolveInspection(id, resolutionNote);
+
+    res.json({ data: toInspectionDto(inspection) });
+  }),
+);
+
 inspectionsRouter.get(
   '/:id',
   asyncRoute(async (req, res) => {

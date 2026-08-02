@@ -37,3 +37,8 @@ export function validationError(message: string, details: ErrorDetail[]) {
 export function notFoundError(message: string) {
   return new AppError(404, 'NOT_FOUND', message);
 }
+
+/** The request was well-formed but the record's current state forbids it — e.g. resolve-once. */
+export function alreadyResolvedError(message: string) {
+  return new AppError(409, 'ALREADY_RESOLVED', message);
+}
