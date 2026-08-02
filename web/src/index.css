@@ -1,0 +1,10 @@
+/* Tailwind v4 is CSS-first: this single import replaces tailwind.config.js and the
+   PostCSS config. Design tokens, when we need them, go in an @theme block here. */
+@import 'tailwindcss';
+
+/* Mobile-first: the app is designed at 390px and stretched up, never shrunk down. */
+html,
+body,
+#root {
+  height: 100%;
+}
