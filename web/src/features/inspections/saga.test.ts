@@ -4,7 +4,7 @@ import { listInspections } from '../../api/inspections';
 import type { Inspection, ListQuery } from '../../api/types';
 import { enqueue } from '../../offline/outbox';
 import { syncRequested } from '../../offline/slice';
-import { fetchList, submitCreate, submitResolve } from './saga';
+import { fetchList, publishOutbox, submitCreate, submitResolve } from './saga';
 import { selectListQuery } from './selectors';
 import {
   createRequested,
@@ -116,6 +116,14 @@ describe('submitCreate saga — always through the outbox', () => {
 
     expect(putActionTypes(effects)).toContain(createSucceeded.type);
     expect(effects).toContainEqual(put(syncRequested()));
+  });
+
+  it('publishes the queue so the pending badge appears on write', () => {
+    // Without this the badge only appears once the sync engine happens to refresh the
+    // queue — which, if a drain is already running, can be a long time.
+    const effects = collectEffects(submitCreate(createRequested(payload)));
+
+    expect(effects).toContainEqual(call(publishOutbox));
   });
 });
 

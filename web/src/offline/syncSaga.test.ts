@@ -1,4 +1,4 @@
-import { call, delay, takeLeading } from 'redux-saga/effects';
+import { call, delay, race, take, takeLeading } from 'redux-saga/effects';
 import { describe, expect, it } from 'vitest';
 import { ApiRequestError } from '../api/client';
 import { createInspection, pullInspectionsSince, resolveInspection } from '../api/inspections';
@@ -230,7 +230,40 @@ describe('syncSaga watcher', () => {
   });
 });
 
-describe('backoff between drain attempts', () => {
+describe('runSync backoff', () => {
+  /** Steps runSync up to the point where a failed drain decides how long to wait. */
+  function runToBackoff() {
+    const saga = runSync();
+    saga.next(); // put(syncStarted)
+    saga.next(); // call(drainOutbox)
+    saga.next(false); // drain failed → call(refreshQueues)
+    return saga.next(); // the wait
+  }
+
+  it('lets a reconnect interrupt the backoff instead of waiting it out', () => {
+    // The bug this pins: takeLeading drops the syncRequested that coming back online
+    // fires, because runSync is still inside its backoff loop. Racing the delay against
+    // that same action means a reconnect (or a "Sync now" tap) retries immediately —
+    // the action still reaches this take even though it can't start a second runSync.
+    const effect = runToBackoff();
+
+    expect(effect.value).toEqual(
+      race({
+        backoff: delay(1000),
+        retriggered: take(syncRequested.type),
+      }),
+    );
+  });
+
+  it('does not sit on a fixed timer', () => {
+    // A plain delay here would mean up to 31 seconds of ignoring the user.
+    const effect = runToBackoff();
+
+    expect(effect.value).not.toEqual(delay(1000));
+  });
+});
+
+describe('backoff growth', () => {
   it('waits longer after each consecutive failure', () => {
     // Asserted through the exported helper rather than by stepping runSync, so the test
     // doesn't depend on where the delay sits in the effect sequence.

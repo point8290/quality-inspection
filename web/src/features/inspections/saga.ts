@@ -11,8 +11,8 @@ import type {
   Severity,
 } from '../../api/types';
 import { putInspection, putInspections, readInspections } from '../../offline/mirror';
-import { enqueue } from '../../offline/outbox';
-import { syncRequested } from '../../offline/slice';
+import { enqueue, listPending } from '../../offline/outbox';
+import { outboxLoaded, syncRequested } from '../../offline/slice';
 import { summaryRequested } from '../summary/slice';
 import { selectInspectionById, selectListQuery } from './selectors';
 import {
@@ -112,6 +112,12 @@ function buildOptimisticInspection(
   };
 }
 
+/** Mirrors the Dexie outbox into Redux, so `selectIsPending` is accurate the moment a write lands. */
+export function* publishOutbox(): Generator<unknown, void, any> {
+  const pending = yield call(listPending);
+  yield put(outboxLoaded(pending));
+}
+
 /**
  * Every write goes through the outbox — there is no online/offline branch. Online is simply
  * the case where the drain happens immediately (DESIGN.md §5.2).
@@ -143,6 +149,9 @@ export function* submitCreate(
       payload: action.payload,
     });
 
+    // Publish the queue immediately so the pending badge appears on write, rather than
+    // whenever the sync engine next happens to refresh it.
+    yield call(publishOutbox);
     yield put(syncRequested());
     yield put(summaryRequested());
   } catch (error) {
@@ -183,6 +192,7 @@ export function* submitResolve(
     payload: { resolutionNote },
   });
 
+  yield call(publishOutbox);
   yield put(syncRequested());
   yield put(summaryRequested());
 }

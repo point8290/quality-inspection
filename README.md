@@ -18,7 +18,10 @@ filtering, sorting, pagination and delta pull, inspection detail, resolve with i
 the summary dashboard, the **signed, idempotent SAP webhook**, and **offline-first sync**
 (service worker, IndexedDB outbox, replay engine). **165 tests passing** (115 API, 50 web).
 
-Not yet implemented: Docker Compose and optional JWT auth.
+Runs either from source or with a single `docker compose up`.
+
+Deliberately not built: JWT auth, which the brief lists as optional — see
+[Deliberately not doing](#deliberately-not-doing) for that and the other conscious omissions.
 
 ---
 

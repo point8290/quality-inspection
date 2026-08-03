@@ -1,4 +1,4 @@
-import { call, delay, put, takeLeading } from 'redux-saga/effects';
+import { call, delay, put, race, take, takeLeading } from 'redux-saga/effects';
 import { ApiRequestError } from '../api/client';
 import { createInspection, pullInspectionsSince, resolveInspection } from '../api/inspections';
 import type { ApiSuccess, Inspection, PageMeta } from '../api/types';
@@ -151,7 +151,15 @@ export function* runSync(): Generator<unknown, void, any> {
         return;
       }
 
-      yield delay(backoffFor(attempt));
+      // Wait for the backoff OR for something to ask for a sync again — whichever comes
+      // first. Without the race, `takeLeading` drops the syncRequested that reconnecting
+      // fires, so coming back online during a 31-second backoff would be ignored and the
+      // queue would sit there until a later write. The action still reaches this `take`
+      // even though it can't start a second runSync, which is exactly what we want.
+      yield race({
+        backoff: delay(backoffFor(attempt)),
+        retriggered: take(syncRequested.type),
+      });
     }
 
     yield put(syncFailed('Could not reach the server — your changes are still queued'));
