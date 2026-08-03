@@ -7,6 +7,7 @@ React + Vite + TypeScript + Tailwind (Redux Toolkit + Redux Saga) talking to an 
 TypeScript REST API over Sequelize and SQLite.
 
 - **Full design & architecture:** [DESIGN.md](DESIGN.md)
+- **SAP webhook interface contract:** [docs/sap-webhook.md](docs/sap-webhook.md)
 - **Decision log / interview walkthrough:** `WALKTHROUGH.md`
 
 ---
@@ -14,12 +15,12 @@ TypeScript REST API over Sequelize and SQLite.
 ## Status
 
 Built and tested: reference data, logging an inspection (idempotent), the list with
-filtering, sorting and pagination, inspection detail, resolve with its invariants, and the
-summary dashboard. **105 tests passing** (90 API, 15 web).
+filtering, sorting, pagination and delta pull, inspection detail, resolve with its invariants,
+the summary dashboard, and the **signed, idempotent SAP webhook**. **140 tests passing**
+(115 API, 25 web).
 
-Planned and designed but not yet implemented: the **SAP webhook** (DESIGN §5.1), **offline-first
-sync** (§5.2), Docker Compose, and optional JWT auth. The design for each is complete in
-DESIGN.md — the schema already carries the columns they need.
+Planned and designed but not yet implemented: **offline-first sync** (DESIGN §5.2), Docker
+Compose, and optional JWT auth. The schema already carries the columns offline needs.
 
 ---
 
@@ -55,8 +56,8 @@ curl http://localhost:4000/api/health
 ### Tests
 
 ```bash
-cd api && npm test    # 90 tests — Vitest + supertest against the Express app in-process
-cd web && npm test    # 15 tests — Vitest over reducers, sagas and pure helpers
+cd api && npm test    # 115 tests — Vitest + supertest against the Express app in-process
+cd web && npm test    # 25 tests — Vitest over reducers, sagas and pure helpers
 ```
 
 `pretest` drops, migrates, and seeds `api/data/test.sqlite` before the API suite runs, so the
@@ -81,6 +82,7 @@ way everywhere. `error.code` is a closed set: `VALIDATION_ERROR`, `NOT_FOUND`,
 | GET | `/api/inspections/summary` | Counts by status × severity | 200 | — |
 | GET | `/api/inspections/:id` | One inspection | 200 | 400, 404 |
 | PATCH | `/api/inspections/:id/resolve` | Resolve with a mandatory note | 200 | 400, 404, 409 |
+| POST | `/api/sap-webhook` | Signed, idempotent SAP ingest — [contract](docs/sap-webhook.md) | 201 new / 200 duplicate | 400, 401, 500 |
 
 **List query parameters**
 
@@ -140,8 +142,16 @@ doing a single-flight outbox drain with backoff — declarative in saga, awkward
 at-least-once pipelines, so both rest on idempotent writes keyed by a token: the SAP event id
 for the webhook, the client-generated UUID for offline. `POST /api/inspections` accepts the
 client's `id` and returns **200 with the stored record** if it already exists, so replaying a
-queued create can't duplicate. That's why the create path is already idempotent even though
-offline isn't built yet.
+queued create can't duplicate. The webhook is keyed on `eventId` in a `webhook_events` log and
+persists before it processes, so a failure becomes an inspectable dead letter that a retry
+heals rather than a lost message. Both are backed by a unique constraint, so the database is the
+final arbiter even if the application logic were wrong.
+
+**Webhook trust is signed over `${timestamp}.${rawBody}`.** Signing the body alone would leave
+the timestamp header attacker-controlled — capture one valid delivery, rewrite the timestamp, and
+the replay window it exists to enforce does nothing. The raw bytes are used because re-serialised
+JSON wouldn't byte-match, which is why that route mounts above `express.json()`. Full contract in
+[docs/sap-webhook.md](docs/sap-webhook.md).
 
 **Invariants live in the service layer.** Resolve requires a non-empty note (trimmed, so
 whitespace doesn't count) and an inspection resolves exactly once. The resolve is a single

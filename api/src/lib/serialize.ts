@@ -35,6 +35,9 @@ export function toInspectionDto(inspection: Inspection) {
     severity: toSeverityDto(inspection.severity),
     remarks: inspection.remarks,
     status: inspection.status,
+    // Provenance, so the UI can show where an inspection came from. The SAP event id itself
+    // stays internal — it's an integration detail, not something a supervisor needs.
+    source: inspection.source,
     resolutionNote: inspection.resolutionNote,
     resolvedAt: inspection.resolvedAt ? inspection.resolvedAt.toISOString() : null,
     createdAt: inspection.createdAt.toISOString(),

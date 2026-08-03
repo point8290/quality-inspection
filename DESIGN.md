@@ -164,10 +164,13 @@ pipelines, so both rest on **idempotent writes** keyed by an idempotency token: 
 
 ### 5.1 SAP webhook — signed, persist-then-process, idempotent
 
-**Trust:** SAP signs the **raw** body with a shared secret and sends
-`X-QIT-Signature: sha256=<hmac>` + `X-QIT-Timestamp`. We recompute HMAC-SHA256 over the raw bytes
-(captured via a `rawBody` middleware on this route — re-serialized JSON wouldn't match),
-**constant-time compare** → 401 on mismatch, and reject stale timestamps (replay protection).
+**Trust:** SAP signs the request with a shared secret and sends
+`X-QIT-Signature: sha256=<hmac>` + `X-QIT-Timestamp`. HMAC-SHA256 is computed over
+**`${timestamp}.${rawBody}`** — the timestamp is inside the signed string, so rewriting the header
+invalidates the signature and the replay window is actually enforced. (Signing the body alone
+would leave the timestamp attacker-controlled, voiding the very control it exists for.) The raw
+bytes are captured via a `rawBody` middleware on this route — re-serialized JSON wouldn't match —
+then **constant-time compare** → 401 on mismatch, and stale timestamps are rejected.
 Rejected (401) requests are application-logged only — never persisted, so unauthenticated traffic
 can't write to the event table.
 

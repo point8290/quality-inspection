@@ -13,6 +13,11 @@ const sqlite = (fileName) => ({
   dialect: 'sqlite',
   storage: path.join(dataDir, fileName),
   logging: false,
+  // Record which seeders have run, the same way migrations are recorded. Without this,
+  // sequelize-cli re-runs every seeder on each `db:seed:all` and the second run fails on
+  // the unique `code` constraint — so adding a seeder later (the SAP code map) would mean
+  // rebuilding the database instead of just applying the new one.
+  seederStorage: 'sequelize',
 });
 
 module.exports = {

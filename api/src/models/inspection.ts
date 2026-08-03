@@ -15,6 +15,11 @@ export const INSPECTION_STATUS = {
   RESOLVED: 'RESOLVED',
 } as const;
 
+export const INSPECTION_SOURCE = {
+  MANUAL: 'MANUAL',
+  SAP: 'SAP',
+} as const;
+
 export class Inspection extends Model<
   InferAttributes<Inspection>,
   InferCreationAttributes<Inspection>
@@ -31,6 +36,10 @@ export class Inspection extends Model<
   declare status: CreationOptional<string>;
   declare resolutionNote: CreationOptional<string | null>;
   declare resolvedAt: CreationOptional<Date | null>;
+  /** Provenance: MANUAL from the app, SAP from the webhook. */
+  declare source: CreationOptional<string>;
+  /** SAP's event id. Unique, so a repeated event can't create a second row. */
+  declare externalRef: CreationOptional<string | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 
@@ -79,6 +88,16 @@ Inspection.init(
     resolvedAt: {
       type: DataTypes.DATE,
       allowNull: true,
+    },
+    source: {
+      type: DataTypes.STRING(20),
+      allowNull: false,
+      defaultValue: INSPECTION_SOURCE.MANUAL,
+    },
+    externalRef: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      unique: true,
     },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,

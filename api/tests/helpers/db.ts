@@ -1,5 +1,7 @@
 import { sequelize } from '../../src/db';
 import { Inspection } from '../../src/models';
+// Importing the models index registers the associations before any test queries run.
+import '../../src/models';
 
 /**
  * Isolation lives in the harness, not the seeders (DESIGN.md §7.0). `pretest` runs the same
@@ -11,6 +13,8 @@ import { Inspection } from '../../src/models';
  * it holds a foreign key to inspections.
  */
 export async function resetMutableTables() {
+  // FK-safe order: webhook_events references inspections, so it goes first.
+  await sequelize.query('DELETE FROM webhook_events');
   await sequelize.query('DELETE FROM inspections');
 }
 

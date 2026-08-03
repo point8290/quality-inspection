@@ -32,6 +32,9 @@ export type DefectType = {
 
 export type InspectionStatus = 'OPEN' | 'RESOLVED';
 
+/** Where the inspection came from: logged in the app, or ingested from SAP (DESIGN.md §5.1). */
+export type InspectionSource = 'MANUAL' | 'SAP';
+
 export type Inspection = {
   id: string;
   /** Calendar day, 'YYYY-MM-DD' — deliberately not a timestamp (DESIGN.md §2.3). */
@@ -41,6 +44,7 @@ export type Inspection = {
   severity: Severity;
   remarks: string | null;
   status: InspectionStatus;
+  source: InspectionSource;
   resolutionNote: string | null;
   resolvedAt: string | null;
   createdAt: string;

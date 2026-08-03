@@ -22,6 +22,7 @@ function inspection(id: string, overrides: Partial<Inspection> = {}): Inspection
     severity: { code: 'MAJOR', label: 'Major', rank: 1 },
     remarks: null,
     status: 'OPEN',
+    source: 'MANUAL',
     resolutionNote: null,
     resolvedAt: null,
     createdAt: '2026-07-15T09:00:00.000Z',

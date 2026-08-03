@@ -15,6 +15,8 @@ export class DefectType extends Model<
   declare label: string;
   declare isActive: CreationOptional<boolean>;
   declare sortOrder: CreationOptional<number>;
+  /** Maps a SAP defect code onto this type — the SAP↔our-code map, kept as data. */
+  declare sapCode: CreationOptional<string | null>;
 }
 
 DefectType.init(
@@ -42,6 +44,11 @@ DefectType.init(
       type: DataTypes.INTEGER,
       allowNull: false,
       defaultValue: 0,
+    },
+    sapCode: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      unique: true,
     },
   },
   {

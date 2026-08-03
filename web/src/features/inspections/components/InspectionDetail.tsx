@@ -54,6 +54,16 @@ export function InspectionDetail({ id, onBack }: { id: string; onBack: () => voi
           <SeverityBadge severity={inspection.severity} />
         </div>
 
+        {/*
+          Provenance lives on the detail sheet, not the card: it matters when someone asks
+          "who logged this?", and the card is already dense at 390px.
+        */}
+        {inspection.source === 'SAP' && (
+          <p className="mt-3 inline-block rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-800">
+            Raised automatically from SAP
+          </p>
+        )}
+
         <dl className="mt-4">
           <Row label="Status" value={inspection.status} />
           <Row label="Inspection date" value={formatInspectionDate(inspection.inspectionDate)} />
