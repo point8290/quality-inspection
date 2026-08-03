@@ -16,11 +16,10 @@ TypeScript REST API over Sequelize and SQLite.
 
 Built and tested: reference data, logging an inspection (idempotent), the list with
 filtering, sorting, pagination and delta pull, inspection detail, resolve with its invariants,
-the summary dashboard, and the **signed, idempotent SAP webhook**. **140 tests passing**
-(115 API, 25 web).
+the summary dashboard, the **signed, idempotent SAP webhook**, and **offline-first sync**
+(service worker, IndexedDB outbox, replay engine). **165 tests passing** (115 API, 50 web).
 
-Planned and designed but not yet implemented: **offline-first sync** (DESIGN §5.2), Docker
-Compose, and optional JWT auth. The schema already carries the columns offline needs.
+Not yet implemented: Docker Compose and optional JWT auth.
 
 ---
 
@@ -57,7 +56,7 @@ curl http://localhost:4000/api/health
 
 ```bash
 cd api && npm test    # 115 tests — Vitest + supertest against the Express app in-process
-cd web && npm test    # 25 tests — Vitest over reducers, sagas and pure helpers
+cd web && npm test    # 50 tests — Vitest over reducers, sagas and pure helpers
 ```
 
 `pretest` drops, migrates, and seeds `api/data/test.sqlite` before the API suite runs, so the
@@ -147,6 +146,14 @@ persists before it processes, so a failure becomes an inspectable dead letter th
 heals rather than a lost message. Both are backed by a unique constraint, so the database is the
 final arbiter even if the application logic were wrong.
 
+**Offline-first is one write path, not two.** Every create and resolve goes through an
+IndexedDB outbox — online is simply the case where the queue drains immediately. There is no
+`navigator.onLine` branch, so a connection dropping between a check and a request can't lose a
+write. A saga drains the queue single-flight with exponential backoff: a replayed create returns
+200 because the id already exists, a resolve the server already applied returns 409 and is
+reconciled, and only a 400 dead-letters — surfaced in a banner, because silently dropping a
+rejected change is the worst thing this app could do.
+
 **Webhook trust is signed over `${timestamp}.${rawBody}`.** Signing the body alone would leave
 the timestamp header attacker-controlled — capture one valid delivery, rewrite the timestamp, and
 the replay window it exists to enforce does nothing. The raw bytes are used because re-serialised
@@ -196,6 +203,9 @@ sorted pagination never drops or repeats a row, and a calendar date never shifts
 - **No shared types package.** `types.ts` is duplicated between client and server. At two
   packages the coupling cost is lower than the build complexity; the first thing I'd change
   with more time.
+- **No `fake-indexeddb`.** The sync engine's ordering, backoff and reconciliation are unit
+  tested by stepping the saga generator; the Dexie modules are deliberately branchless CRUD,
+  verified manually. If logic ever moves into them, that's the signal to add the dependency.
 - **No component tests.** The state machine behind every loading/empty/error state is unit
   tested at the reducer and saga level; the markup consuming it is verified by a manual pass at
   390px. Adding jsdom and Testing Library mid-project to assert render output the rubric scores
@@ -209,7 +219,7 @@ sorted pagination never drops or repeats a row, and a calendar date never shifts
   that they evolve; right now they only change by seeder.
 - **Move SAP ingest to accept → 202 → queue → worker** at real volume. The `WebhookEvent` log is
   deliberately the seam that makes this possible without a contract change.
-- **Richer offline conflict handling** — Background Sync, and a dead-letter UI so a user can see
-  and fix an op the server rejected.
+- **Background Sync** so a queued change syncs even with the app closed, and a richer
+  dead-letter flow that lets the user fix and retry a rejected op rather than only discard it.
 - **End-to-end tests and role-based access**, and if the team valued generated type-safety over
   migration control, I'd revisit Prisma — that's the trade I consciously made.

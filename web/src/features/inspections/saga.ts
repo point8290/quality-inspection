@@ -1,16 +1,20 @@
 import { call, put, select, takeLatest, takeLeading } from 'redux-saga/effects';
 import type { PayloadAction } from '@reduxjs/toolkit';
-import { ApiRequestError } from '../../api/client';
-import { createInspection, listInspections, resolveInspection } from '../../api/inspections';
+import { listInspections } from '../../api/inspections';
 import type {
   ApiSuccess,
   CreateInspectionPayload,
+  DefectType,
   Inspection,
   ListQuery,
   PageMeta,
+  Severity,
 } from '../../api/types';
+import { putInspection, putInspections, readInspections } from '../../offline/mirror';
+import { enqueue } from '../../offline/outbox';
+import { syncRequested } from '../../offline/slice';
 import { summaryRequested } from '../summary/slice';
-import { selectListQuery } from './selectors';
+import { selectInspectionById, selectListQuery } from './selectors';
 import {
   createFailed,
   createRequested,
@@ -21,8 +25,6 @@ import {
   listRequested,
   listSucceeded,
   pageChanged,
-  resolveConflicted,
-  resolveFailed,
   resolveRequested,
   resolveSucceeded,
   sortChanged,
@@ -54,56 +56,135 @@ export function* fetchList(): Generator<unknown, void, any> {
         },
       }),
     );
+
+    // Write through to the mirror so the same rows render on a cold, offline start.
+    yield call(putInspections, response.data);
   } catch (error) {
+    // Offline, the mirror is the read path: showing the last known list beats showing an
+    // error for data we already have on the device (DESIGN.md §5.2).
+    const mirrored: Inspection[] = yield call(readInspections);
+
+    if (mirrored.length > 0) {
+      yield put(
+        listSucceeded({
+          items: mirrored,
+          meta: {
+            page: 1,
+            pageSize: mirrored.length,
+            total: mirrored.length,
+            totalPages: 1,
+          },
+        }),
+      );
+      return;
+    }
+
     yield put(listFailed(error instanceof Error ? error.message : 'Unknown error'));
   }
 }
 
-function* submitCreate(action: PayloadAction<CreateInspectionPayload>) {
+/**
+ * Builds the row the UI shows before the server has seen it. Everything here is already
+ * known on the device: the id is client-minted, and the labels come from reference data.
+ */
+function buildOptimisticInspection(
+  payload: CreateInspectionPayload,
+  defectTypes: DefectType[],
+  severities: Severity[],
+): Inspection {
+  const now = new Date().toISOString();
+  const defectType = defectTypes.find((type) => type.code === payload.defectTypeCode);
+  const severity = severities.find((option) => option.code === payload.severityCode);
+
+  return {
+    id: payload.id,
+    inspectionDate: payload.inspectionDate,
+    machineId: payload.machineId,
+    defectType: defectType ?? { code: payload.defectTypeCode, label: payload.defectTypeCode },
+    severity: severity ?? { code: payload.severityCode, label: payload.severityCode, rank: 99 },
+    remarks: payload.remarks ?? null,
+    status: 'OPEN',
+    source: 'MANUAL',
+    resolutionNote: null,
+    resolvedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/**
+ * Every write goes through the outbox — there is no online/offline branch. Online is simply
+ * the case where the drain happens immediately (DESIGN.md §5.2).
+ *
+ * Two code paths would mean a connection dropping between the `navigator.onLine` check and
+ * the request produces a silently lost write. One path can't have that bug.
+ */
+export function* submitCreate(
+  action: PayloadAction<CreateInspectionPayload>,
+): Generator<unknown, void, any> {
   try {
-    yield call(createInspection, action.payload);
-    yield put(createSucceeded());
-    // Back to page 1 and re-read, rather than splicing the new row in locally: the server
-    // is the source of truth for ordering and for the expanded relation labels.
-    yield put(pageChanged(1));
+    const defectTypes: DefectType[] = yield select(
+      (state) => state.reference.defectTypes as DefectType[],
+    );
+    const severities: Severity[] = yield select(
+      (state) => state.reference.severities as Severity[],
+    );
+
+    const optimistic = buildOptimisticInspection(action.payload, defectTypes, severities);
+
+    // On screen first, persisted second, queued third: the supervisor never waits.
+    yield put(createSucceeded(optimistic));
+    yield call(putInspection, optimistic);
+
+    yield call(enqueue, {
+      opId: crypto.randomUUID(),
+      type: 'CREATE',
+      inspectionId: action.payload.id,
+      payload: action.payload,
+    });
+
+    yield put(syncRequested());
     yield put(summaryRequested());
   } catch (error) {
-    const isApiError = error instanceof ApiRequestError;
     yield put(
       createFailed({
         message: error instanceof Error ? error.message : 'Unknown error',
-        fieldErrors: isApiError ? (error.details ?? []) : [],
+        fieldErrors: [],
       }),
     );
   }
 }
 
-/** Exported so tests can step the generator and assert the effects it yields. */
 export function* submitResolve(
   action: PayloadAction<{ id: string; resolutionNote: string }>,
 ): Generator<unknown, void, any> {
-  try {
-    const response: ApiSuccess<Inspection> = yield call(
-      resolveInspection,
-      action.payload.id,
-      action.payload.resolutionNote,
-    );
+  const { id, resolutionNote } = action.payload;
+  const existing: Inspection | null = yield select(selectInspectionById(id));
 
-    yield put(resolveSucceeded(response.data));
-    yield put(summaryRequested());
-  } catch (error) {
-    // 409 online means another supervisor resolved it first — a real conflict, so we say so
-    // and refetch to show *their* note. The offline replay path treats the same status as
-    // success, because there it means our own queued op already landed (DESIGN.md §5.2).
-    if (error instanceof ApiRequestError && error.status === 409) {
-      yield put(resolveConflicted());
-      yield put(listRequested());
-      yield put(summaryRequested());
-      return;
-    }
+  // Apply locally first. The server still arbitrates resolve-once — a 409 during the drain
+  // means it was already resolved, which the sync engine reconciles rather than reports.
+  if (existing) {
+    const resolved: Inspection = {
+      ...existing,
+      status: 'RESOLVED',
+      resolutionNote,
+      resolvedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
 
-    yield put(resolveFailed(error instanceof Error ? error.message : 'Unknown error'));
+    yield put(resolveSucceeded(resolved));
+    yield call(putInspection, resolved);
   }
+
+  yield call(enqueue, {
+    opId: crypto.randomUUID(),
+    type: 'RESOLVE',
+    inspectionId: id,
+    payload: { resolutionNote },
+  });
+
+  yield put(syncRequested());
+  yield put(summaryRequested());
 }
 
 export function* inspectionsSaga() {

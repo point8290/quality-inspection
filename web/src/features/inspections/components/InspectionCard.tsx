@@ -1,5 +1,7 @@
 import type { Inspection } from '../../../api/types';
+import { useAppSelector } from '../../../app/hooks';
 import { formatInspectionDate } from '../../../lib/formatDate';
+import { selectIsPending } from '../../../offline/selectors';
 import { SeverityBadge } from './SeverityBadge';
 
 export function InspectionCard({
@@ -9,6 +11,9 @@ export function InspectionCard({
   inspection: Inspection;
   onSelect: () => void;
 }) {
+  // Derived from the outbox, never stored on the row — so the badge can't survive a sync.
+  const isPending = useAppSelector(selectIsPending(inspection.id));
+
   return (
     // A button, not a div with onClick — the whole card is one keyboard-reachable target.
     <button
@@ -35,6 +40,11 @@ export function InspectionCard({
         <time dateTime={inspection.inspectionDate}>
           {formatInspectionDate(inspection.inspectionDate)}
         </time>
+        {isPending && (
+          <span className="shrink-0 rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-900">
+            Pending sync
+          </span>
+        )}
         <span
           className={`shrink-0 rounded px-2 py-0.5 font-medium ${
             inspection.status === 'OPEN'

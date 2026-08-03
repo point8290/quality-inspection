@@ -8,6 +8,7 @@ import { InspectionList } from './features/inspections/components/InspectionList
 import { LogForm } from './features/inspections/components/LogForm';
 import { referenceRequested } from './features/reference/slice';
 import { SummaryView } from './features/summary/SummaryView';
+import { OfflineIndicator } from './offline/OfflineIndicator';
 
 // Two screens sit behind the tab bar; 'log' and 'detail' are pushed on top of them. One
 // union in one component — a router would be a dependency to justify for four screens.
@@ -61,6 +62,9 @@ function App() {
           onRetry={() => dispatch(referenceRequested())}
         />
       )}
+
+      {/* Sits under the header so queued and rejected work is visible on every screen. */}
+      <OfflineIndicator />
 
       <main className="flex-1 overflow-y-auto overscroll-contain">
         {screen === 'list' && <InspectionList onSelect={openDetail} />}

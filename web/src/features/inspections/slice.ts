@@ -102,7 +102,16 @@ const inspectionsSlice = createSlice({
       state.createError = null;
       state.createFieldErrors = [];
     },
-    createSucceeded(state) {
+    /**
+     * Optimistic: the row goes on screen before the server has seen it. If a filter is
+     * active and the new inspection doesn't match it, the next list fetch corrects the view
+     * — a moment of over-showing beats making the supervisor wait for a round trip.
+     */
+    createSucceeded(state, action: PayloadAction<Inspection>) {
+      state.items.unshift(action.payload);
+      if (state.meta) {
+        state.meta.total += 1;
+      }
       state.createStatus = 'idle';
       state.createError = null;
       state.createFieldErrors = [];

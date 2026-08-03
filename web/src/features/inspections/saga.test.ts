@@ -1,27 +1,50 @@
 import { call, put, select } from 'redux-saga/effects';
 import { describe, expect, it } from 'vitest';
-import { ApiRequestError } from '../../api/client';
-import { listInspections, resolveInspection } from '../../api/inspections';
+import { listInspections } from '../../api/inspections';
 import type { Inspection, ListQuery } from '../../api/types';
-import { summaryRequested } from '../summary/slice';
-import { fetchList, submitResolve } from './saga';
+import { enqueue } from '../../offline/outbox';
+import { syncRequested } from '../../offline/slice';
+import { fetchList, submitCreate, submitResolve } from './saga';
 import { selectListQuery } from './selectors';
 import {
-  listRequested,
+  createRequested,
+  createSucceeded,
   listSucceeded,
-  resolveConflicted,
   resolveRequested,
   resolveSucceeded,
 } from './slice';
 
-const resolved = {
-  id: 'abc',
-  status: 'RESOLVED',
-  resolutionNote: 'Fixed',
-} as unknown as Inspection;
-
 // Sagas are generators, so a test can walk them one effect at a time: no network, no
 // mocking library — just assert the plain objects the saga yields.
+
+/** Runs a saga to completion and returns every effect it yielded, in order. */
+function collectEffects(saga: Generator<unknown, void, any>) {
+  const effects: unknown[] = [];
+  let step = saga.next();
+
+  while (!step.done) {
+    effects.push(step.value);
+    // Feed back an empty array: enough for the `select`s these sagas make.
+    step = saga.next([]);
+  }
+
+  return effects;
+}
+
+/** The action types the saga `put`, so assertions don't depend on effect ordering. */
+function putActionTypes(effects: unknown[]) {
+  return effects
+    .map((effect) => (effect as { payload?: { action?: { type?: string } } })?.payload?.action?.type)
+    .filter(Boolean);
+}
+
+/** The op objects passed to `enqueue`, found by function identity rather than position. */
+function enqueuedOps(saga: Generator<unknown, void, any>) {
+  return collectEffects(saga)
+    .filter((effect) => (effect as { payload?: { fn?: unknown } })?.payload?.fn === enqueue)
+    .map((effect) => (effect as { payload: { args: unknown[] } }).payload.args[0]);
+}
+
 describe('fetchList saga', () => {
   const query: ListQuery = {
     page: 2,
@@ -49,41 +72,84 @@ describe('fetchList saga', () => {
     const effect = saga.next({ data: [], meta });
 
     expect(effect.value).toEqual(put(listSucceeded({ items: [], meta })));
-    expect(saga.next().done).toBe(true);
   });
 });
 
-describe('submitResolve saga', () => {
-  it('calls the API, then updates the row and refreshes the summary', () => {
-    const saga = submitResolve(resolveRequested({ id: 'abc', resolutionNote: 'Fixed' }));
+/**
+ * Every write goes through the outbox — there is no online/offline branch. Online is just
+ * the case where the drain happens immediately (DESIGN.md §5.2). One write path means a
+ * connection that drops between a check and a request can't produce a lost write.
+ */
+describe('submitCreate saga — always through the outbox', () => {
+  const payload = {
+    id: 'client-minted-uuid',
+    inspectionDate: '2026-08-03',
+    machineId: 'LOOM-04',
+    defectTypeCode: 'HOLE',
+    severityCode: 'MAJOR',
+  };
 
-    expect(saga.next().value).toEqual(call(resolveInspection, 'abc', 'Fixed'));
-    expect(saga.next({ data: resolved }).value).toEqual(put(resolveSucceeded(resolved)));
-    expect(saga.next().value).toEqual(put(summaryRequested()));
-    expect(saga.next().done).toBe(true);
+  it('never calls the API directly', () => {
+    const calledFunctions = collectEffects(submitCreate(createRequested(payload)))
+      .map((effect) => (effect as { payload?: { fn?: { name?: string } } })?.payload?.fn?.name)
+      .filter(Boolean);
+
+    // The sync engine owns the network. If a component's write could reach the API without
+    // passing through the outbox, an offline write would be silently lost.
+    expect(calledFunctions).not.toContain('createInspection');
+    expect(calledFunctions).toContain('enqueue');
   });
 
-  it('treats an online 409 as a surfaced conflict and refetches', () => {
-    const saga = submitResolve(resolveRequested({ id: 'abc', resolutionNote: 'Fixed' }));
-    saga.next();
+  it('enqueues a CREATE op keyed on the client-minted id', () => {
+    const enqueued = enqueuedOps(submitCreate(createRequested(payload)));
 
-    const conflict = new ApiRequestError(409, 'ALREADY_RESOLVED', 'Already resolved');
-
-    // Online, someone else got there first — say so and reload to show *their* note.
-    // The offline replay path will treat the same status as success (DESIGN.md §5.2).
-    expect(saga.throw(conflict).value).toEqual(put(resolveConflicted()));
-    expect(saga.next().value).toEqual(put(listRequested()));
-    expect(saga.next().value).toEqual(put(summaryRequested()));
-    expect(saga.next().done).toBe(true);
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]).toMatchObject({
+      type: 'CREATE',
+      inspectionId: 'client-minted-uuid',
+      payload,
+    });
   });
 
-  it('does not report success when the resolve fails', () => {
-    const saga = submitResolve(resolveRequested({ id: 'abc', resolutionNote: 'Fixed' }));
-    saga.next();
+  it('shows the row optimistically and asks the sync engine to drain', () => {
+    const effects = collectEffects(submitCreate(createRequested(payload)));
 
-    const effect = saga.throw(new ApiRequestError(500, 'INTERNAL_ERROR', 'Server error'));
-
-    expect(effect.value).not.toEqual(put(resolveSucceeded(resolved)));
-    expect(saga.next().done).toBe(true);
+    expect(putActionTypes(effects)).toContain(createSucceeded.type);
+    expect(effects).toContainEqual(put(syncRequested()));
   });
 });
+
+describe('submitResolve saga — always through the outbox', () => {
+  const action = resolveRequested({ id: 'abc', resolutionNote: 'Re-wove the section' });
+
+  it('enqueues a RESOLVE op and asks the sync engine to drain', () => {
+    const enqueued = enqueuedOps(submitResolve(action));
+
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]).toMatchObject({
+      type: 'RESOLVE',
+      inspectionId: 'abc',
+      payload: { resolutionNote: 'Re-wove the section' },
+    });
+    expect(collectEffects(submitResolve(action))).toContainEqual(put(syncRequested()));
+  });
+
+  it('marks the inspection resolved locally without waiting for the server', () => {
+    // The server still arbitrates resolve-once; a 409 during the drain is reconciled by the
+    // sync engine rather than reported to the user.
+    const saga = submitResolve(action);
+    const existing = { id: 'abc', status: 'OPEN' } as Inspection;
+
+    const effects: unknown[] = [];
+    let step = saga.next();
+    while (!step.done) {
+      effects.push(step.value);
+      step = saga.next(existing);
+    }
+
+    expect(putActionTypes(effects)).toContain(resolveSucceeded.type);
+  });
+});
+
+/** Kept as a type-level guard that the optimistic row is a real Inspection. */
+export type OptimisticRow = Inspection;
