@@ -8,7 +8,6 @@ TypeScript REST API over Sequelize and SQLite.
 
 - **Full design & architecture:** [DESIGN.md](DESIGN.md)
 - **SAP webhook interface contract:** [docs/sap-webhook.md](docs/sap-webhook.md)
-- **Decision log / interview walkthrough:** `WALKTHROUGH.md`
 
 ---
 
@@ -49,8 +48,21 @@ curl http://localhost:4000/api/health
 # {"data":{"status":"ok"}}
 ```
 
-> **Docker Compose** — lands in Phase 7. `docker compose up` is not wired yet; use the two
-> commands above.
+### With Docker
+
+One command, no Node needed on the host:
+
+```bash
+docker compose up --build
+```
+
+- Web → <http://localhost:8080>  (`WEB_PORT=8081 docker compose up` if 8080 is taken)
+- API → <http://localhost:4000>
+
+The API container runs migrations and seeders on startup — both are tracked, so restarting
+never double-applies — and stores its SQLite file in a named volume, so data survives
+`docker compose down`. nginx serves the built SPA and proxies `/api` to the API service, so the
+app is same-origin in containers exactly as it is behind the Vite dev proxy.
 
 ### Tests
 

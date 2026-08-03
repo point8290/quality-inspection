@@ -41,7 +41,7 @@
 
 ```
 quality-inspection-tracker/
-├── docker-compose.yml · README.md · DESIGN.md · WALKTHROUGH.md · CLAUDE.md
+├── docker-compose.yml · README.md · DESIGN.md · docs/sap-webhook.md
 ├── api/                      # Express + TS + Sequelize + SQLite
 │   ├── config/ migrations/ seeders/ .sequelizerc
 │   └── src/
@@ -275,7 +275,7 @@ health returns ok and the page renders. First commit `chore: project setup` clos
 | **4 — Mobile polish + README** (≈4h) | 390px pass, badges, empty/loading/error; README + trade-offs |
 | **5 — SAP integration** (≈5h) | add `dotenv` + `.env` (shared secret); `WebhookEvent` + `source`/`externalRef` + `sapCode` migration; rawBody + HMAC verify; persist-then-process ingest; tests (dup event, bad signature) |
 | **6 — Offline** (≈7h) | vite-plugin-pwa SW; Dexie stores; outbox + optimistic writes; sync saga (drain/backoff/dead-letter); delta pull; pending badges |
-| **7 — QA & submit** (≈2h) | Fresh-clone run of both paths; seed data; commit hygiene; push public repo |
+| **7 — QA & submit** (≈2h) | Docker Compose (api + nginx-served web, named volume, migrate/seed on start); fresh-clone run of both paths; commit hygiene; push public repo |
 
 **Backend build order:** db → models → migrations → seeders → app → zod → reference endpoints →
 create(idempotent) → list(+delta) → get → resolve → summary → error middleware → sap ingest.

@@ -1,0 +1,40 @@
+services:
+  api:
+    build: ./api
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      # Read from the host environment, with a demo fallback so `docker compose up` works
+      # with no setup. In a real deployment this comes from a secret manager — the point of
+      # NODE_ENV=production here is that the API refuses to start if it's ever unset.
+      SAP_WEBHOOK_SECRET: ${SAP_WEBHOOK_SECRET:-dev-secret}
+    volumes:
+      # Named volume, so inspections survive `docker compose down`.
+      - api-data:/app/data
+    ports:
+      - '4000:4000'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:4000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  web:
+    build: ./web
+    ports:
+      # Override with WEB_PORT=8081 if 8080 is already taken on your machine.
+      - '${WEB_PORT:-8080}:80'
+    depends_on:
+      # Wait for migrations and seeding to finish, not just for the container to exist —
+      # otherwise the first page load races an empty database.
+      api:
+        condition: service_healthy
+
+volumes:
+  api-data:
