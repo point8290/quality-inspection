@@ -1,44 +1,205 @@
 # Quality Inspection Tracker
 
-Mobile-first web app for shop-floor supervisors to log, track, and resolve fabric quality
-defects from a phone.
+A mobile-first web app for shop-floor supervisors to log, track, and resolve fabric quality
+defects from a phone — replacing the paper register.
 
-- **Design & architecture:** [DESIGN.md](DESIGN.md)
-- **Decision log / walkthrough:** [WALKTHROUGH.md](WALKTHROUGH.md)
+React + Vite + TypeScript + Tailwind (Redux Toolkit + Redux Saga) talking to an Express +
+TypeScript REST API over Sequelize and SQLite.
 
-## Stack
+- **Full design & architecture:** [DESIGN.md](DESIGN.md)
+- **Decision log / interview walkthrough:** `WALKTHROUGH.md`
 
-React + Vite + TypeScript + Tailwind v4 (Redux Toolkit + Redux Saga) talking to an
-Express + TypeScript REST API over Sequelize + SQLite.
+---
 
-## Running locally
+## Status
 
-Two independent npm projects — install each once.
+Built and tested: reference data, logging an inspection (idempotent), the list with
+filtering, sorting and pagination, inspection detail, resolve with its invariants, and the
+summary dashboard. **105 tests passing** (90 API, 15 web).
+
+Planned and designed but not yet implemented: the **SAP webhook** (DESIGN §5.1), **offline-first
+sync** (§5.2), Docker Compose, and optional JWT auth. The design for each is complete in
+DESIGN.md — the schema already carries the columns they need.
+
+---
+
+## Running it
+
+Two independent npm projects. No Docker required.
 
 ```bash
-# API  → http://localhost:4000
+# 1. API  → http://localhost:4000
 cd api
 npm install
-npm run migrate && npm run seed
+npm run migrate      # creates data/dev.sqlite from hand-written migrations
+npm run seed         # reference data + 8 demo inspections
 npm run dev
 
-# Web  → http://localhost:5173 (proxies /api to the API)
+# 2. Web  → http://localhost:5173
 cd web
 npm install
 npm run dev
 ```
 
-Health check: <http://localhost:4000/api/health> returns `{ "data": { "status": "ok" } }`.
-
-## Tests
+The web dev server proxies `/api` to `http://localhost:4000`, so both run same-origin and
+there's nothing to configure. Check the API is up:
 
 ```bash
-cd api && npm test
+curl http://localhost:4000/api/health
+# {"data":{"status":"ok"}}
 ```
 
-`pretest` drops, migrates, and seeds `api/data/test.sqlite` before the suite runs.
+> **Docker Compose** — lands in Phase 7. `docker compose up` is not wired yet; use the two
+> commands above.
+
+### Tests
+
+```bash
+cd api && npm test    # 90 tests — Vitest + supertest against the Express app in-process
+cd web && npm test    # 15 tests — Vitest over reducers, sagas and pure helpers
+```
+
+`pretest` drops, migrates, and seeds `api/data/test.sqlite` before the API suite runs, so the
+tests always start from a known database.
 
 ---
 
-*Setup, architecture decisions, and "what I'd do differently with more time" are expanded in
-Phase 4 — see [DESIGN.md](DESIGN.md) §7 for the build plan.*
+## API
+
+Base path `/api`. Every response is either `{ data, meta? }` or
+`{ error: { code, message, details? } }` — so the client handles success and failure the same
+way everywhere. `error.code` is a closed set: `VALIDATION_ERROR`, `NOT_FOUND`,
+`ALREADY_RESOLVED`, `INVALID_SIGNATURE`, `INTERNAL_ERROR`.
+
+| Method | Path | Purpose | Success | Errors |
+|---|---|---|---|---|
+| GET | `/api/health` | Liveness | 200 | — |
+| GET | `/api/severities` | Dropdown options | 200 | — |
+| GET | `/api/defect-types` | Dropdown options (active only) | 200 | — |
+| POST | `/api/inspections` | Create — **idempotent on the client `id`** | 201 new / 200 existing | 400 |
+| GET | `/api/inspections` | List: filter, sort, paginate, delta pull | 200 + `meta` | 400 |
+| GET | `/api/inspections/summary` | Counts by status × severity | 200 | — |
+| GET | `/api/inspections/:id` | One inspection | 200 | 400, 404 |
+| PATCH | `/api/inspections/:id/resolve` | Resolve with a mandatory note | 200 | 400, 404, 409 |
+
+**List query parameters**
+
+| Param | Values |
+|---|---|
+| `page`, `pageSize` | `pageSize` capped at 100, default 20 |
+| `status` | `OPEN` · `RESOLVED` |
+| `severityCode`, `defectTypeCode` | any code from the reference endpoints |
+| `dateFrom`, `dateTo` | `YYYY-MM-DD`, inclusive at both ends |
+| `sortBy` | `createdAt` (default) · `inspectionDate` · `severity` |
+| `sortDir` | `asc` · `desc` — on `severity` this applies to rank, so `asc` is most-severe-first |
+| `updatedSince` | ISO timestamp; **sync mode** — returns rows with `updatedAt >` the cursor, ordered ascending. Can't be combined with `sortBy`. |
+
+```bash
+# Open critical defects in the first week of July, most severe first
+curl "http://localhost:4000/api/inspections?status=OPEN&dateFrom=2026-07-01&dateTo=2026-07-07&sortBy=severity&sortDir=asc"
+
+# Resolve one
+curl -X PATCH http://localhost:4000/api/inspections/<id>/resolve \
+  -H 'Content-Type: application/json' \
+  -d '{"resolutionNote":"Re-wove the section and re-inspected"}'
+```
+
+---
+
+## Architecture decisions
+
+**Sequelize over Prisma.** I wanted to own my migrations directly — hand-written
+`queryInterface` up/down I can explain, rather than migrations generated by diffing a schema —
+and to keep the machinery light: Sequelize is pure JS plus a driver, where Prisma adds a
+generated client and a query-engine binary. The honest trade-off is TypeScript ergonomics: I
+write the model typings myself instead of getting a fully-typed generated client.
+
+**Lookup tables, not enums, for defect type and severity.** They're classification data that
+carries metadata — a display label, an active flag, a sort order, a severity rank — and defect
+types will grow over time, so they're tables, and the dropdowns read from them. That gives one
+source of truth instead of an enum duplicated in the frontend. `status` is different: it's
+workflow state with no metadata, so it stays a plain string. The rule is classification → table,
+workflow → string.
+
+**Surrogate integer PK plus a unique `code`.** The autoincrement id is stable identity; `code`
+is the business key. Renaming a label never cascades through foreign keys, and **the API speaks
+in codes** — writes resolve the relation by code, reads include it and return `code` + `label`,
+so surrogate ids never leave the backend. One serializer is the single place that happens.
+
+**SQLite.** A single file, no container, instant migrations — the app runs seconds after a
+clone, which is worth a lot for a take-home. Behind Sequelize, moving to Postgres for real
+concurrency is a dialect and driver change, not a rewrite.
+
+**Redux Toolkit + Redux Saga.** RTK removes the store boilerplate; saga keeps every async call
+in one predictable place with real concurrency control — `takeLatest` on fetches so a stale
+list can never render, `takeLeading` on submits so a double tap can't double-create. Saga
+genuinely earns its keep in the offline phase, where the sync engine is a long-lived watcher
+doing a single-flight outbox drain with backoff — declarative in saga, awkward with thunks.
+
+**One idempotency principle, applied twice.** SAP ingest and offline replay are both
+at-least-once pipelines, so both rest on idempotent writes keyed by a token: the SAP event id
+for the webhook, the client-generated UUID for offline. `POST /api/inspections` accepts the
+client's `id` and returns **200 with the stored record** if it already exists, so replaying a
+queued create can't duplicate. That's why the create path is already idempotent even though
+offline isn't built yet.
+
+**Invariants live in the service layer.** Resolve requires a non-empty note (trimmed, so
+whitespace doesn't count) and an inspection resolves exactly once. The resolve is a single
+conditional `UPDATE ... WHERE id = ? AND status = 'OPEN'` rather than a read followed by a
+write, so two supervisors tapping at the same moment can't both succeed — zero rows affected
+*is* the 409. The UI enforces the same rules for feedback, never as the guarantee.
+
+**Validation at the edge, integrity at the bottom.** Zod parses every body, query and param
+into a 400 that names the offending field; the service checks business rules; foreign keys and
+the unique `externalRef` are the database-level backstop.
+
+**Mobile-first, verified at 390px.** Bottom tabs plus a floating log button, a card list, and a
+tap-through detail sheet that hosts the resolve modal. Form controls are 16px (below that, iOS
+Safari zooms the page on focus) with 44px tap targets, the shell is sized in `dvh` so the tab
+bar isn't clipped by the address bar, and the tab bar respects `safe-area-inset-bottom`.
+
+---
+
+## Testing approach
+
+API tests drive the exported Express app in-process with supertest — no port, no server to
+tear down. They run against a real migrated and seeded SQLite file rather than mocks, so the
+migrations, the model definitions and the queries are all under test. Isolation lives in the
+harness, not in the seeders: `pretest` runs the same `db:seed:all` a human would, then each
+test file truncates only the mutable tables so the seeded lookup tables survive.
+
+Web tests cover reducers, sagas and pure helpers. A saga is a generator, so a test walks it one
+effect at a time and asserts the plain objects it yields — no network and no mocking library.
+
+The tests that matter most are the ones pinning the invariants: idempotent create doesn't
+duplicate, resolve requires a note, resolve-once returns 409, summary counts sum to the total,
+sorted pagination never drops or repeats a row, and a calendar date never shifts by a timezone.
+
+---
+
+## Deliberately not doing
+
+- **No users, roles or auth in the base app.** Single supervisor persona; JWT is designed as an
+  env-toggleable extra so the app still runs in one command.
+- **No machine master table.** `machineId` is free text — a real deployment would pull it from
+  the plant's equipment master, which isn't mine to model here.
+- **No shared types package.** `types.ts` is duplicated between client and server. At two
+  packages the coupling cost is lower than the build complexity; the first thing I'd change
+  with more time.
+- **No component tests.** The state machine behind every loading/empty/error state is unit
+  tested at the reducer and saga level; the markup consuming it is verified by a manual pass at
+  390px. Adding jsdom and Testing Library mid-project to assert render output the rubric scores
+  on the running app wasn't worth two dependencies.
+
+## What I'd do differently with more time
+
+- **Extract a shared types and validation package** so the client and server can't drift — the
+  duplication above is a real risk as the API grows.
+- **A small admin UI for the reference tables**, since the whole point of making them tables was
+  that they evolve; right now they only change by seeder.
+- **Move SAP ingest to accept → 202 → queue → worker** at real volume. The `WebhookEvent` log is
+  deliberately the seam that makes this possible without a contract change.
+- **Richer offline conflict handling** — Background Sync, and a dead-letter UI so a user can see
+  and fix an op the server rejected.
+- **End-to-end tests and role-based access**, and if the team valued generated type-safety over
+  migration control, I'd revisit Prisma — that's the trade I consciously made.

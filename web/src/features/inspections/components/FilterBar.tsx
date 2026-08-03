@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { InspectionSort, SortBy, SortDir } from '../../../api/types';
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
+import { BUTTON_SECONDARY_CLASS, CONTROL_CLASS } from '../../../lib/styles';
 import { selectFilters, selectHasActiveFilters, selectSort } from '../selectors';
 import { filtersChanged, filtersCleared, sortChanged } from '../slice';
 
@@ -33,7 +34,7 @@ const SORT_OPTIONS: { label: string; value: string; sort: InspectionSort }[] = [
   },
 ];
 
-const SELECT_CLASS = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm';
+const SELECT_CLASS = CONTROL_CLASS;
 
 export function FilterBar() {
   const dispatch = useAppDispatch();
@@ -55,7 +56,7 @@ export function FilterBar() {
         <button
           type="button"
           onClick={() => setIsOpen((open) => !open)}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium"
+          className={`shrink-0 ${BUTTON_SECONDARY_CLASS}`}
           aria-expanded={isOpen}
         >
           Filters{activeCount > 0 ? ` (${activeCount})` : ''}
@@ -151,7 +152,7 @@ export function FilterBar() {
             <button
               type="button"
               onClick={() => dispatch(filtersCleared())}
-              className="col-span-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium"
+              className={`col-span-2 ${BUTTON_SECONDARY_CLASS}`}
             >
               Clear filters
             </button>

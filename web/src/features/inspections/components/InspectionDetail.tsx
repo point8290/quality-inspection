@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAppSelector } from '../../../app/hooks';
 import { formatInspectionDate } from '../../../lib/formatDate';
+import { BUTTON_PRIMARY_CLASS, BUTTON_SECONDARY_CLASS } from '../../../lib/styles';
 import { selectInspectionById } from '../selectors';
 import { ResolveModal } from './ResolveModal';
 import { SeverityBadge } from './SeverityBadge';
@@ -9,7 +10,7 @@ function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-4 border-b border-slate-100 py-3 last:border-0">
       <dt className="text-sm text-slate-500">{label}</dt>
-      <dd className="text-right text-sm font-medium text-slate-900">{value}</dd>
+      <dd className="text-right text-sm font-medium wrap-break-word text-slate-900">{value}</dd>
     </div>
   );
 }
@@ -32,7 +33,7 @@ export function InspectionDetail({ id, onBack }: { id: string; onBack: () => voi
         <button
           type="button"
           onClick={onBack}
-          className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+          className={`mt-4 ${BUTTON_PRIMARY_CLASS}`}
         >
           Back
         </button>
@@ -45,10 +46,10 @@ export function InspectionDetail({ id, onBack }: { id: string; onBack: () => voi
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">
+            <h2 className="text-lg font-semibold wrap-break-word text-slate-900">
               {inspection.defectType.label}
             </h2>
-            <p className="text-sm text-slate-500">{inspection.machineId}</p>
+            <p className="text-sm wrap-break-word text-slate-500">{inspection.machineId}</p>
           </div>
           <SeverityBadge severity={inspection.severity} />
         </div>
@@ -65,7 +66,7 @@ export function InspectionDetail({ id, onBack }: { id: string; onBack: () => voi
         {inspection.remarks && (
           <div className="mt-4">
             <h3 className="text-xs font-medium tracking-wide text-slate-500 uppercase">Remarks</h3>
-            <p className="mt-1 text-sm text-slate-700">{inspection.remarks}</p>
+            <p className="mt-1 text-sm wrap-break-word text-slate-700">{inspection.remarks}</p>
           </div>
         )}
 
@@ -74,7 +75,7 @@ export function InspectionDetail({ id, onBack }: { id: string; onBack: () => voi
             <h3 className="text-xs font-medium tracking-wide text-emerald-800 uppercase">
               Resolution note
             </h3>
-            <p className="mt-1 text-sm text-emerald-900">{inspection.resolutionNote}</p>
+            <p className="mt-1 text-sm wrap-break-word text-emerald-900">{inspection.resolutionNote}</p>
           </div>
         )}
       </section>
@@ -83,7 +84,7 @@ export function InspectionDetail({ id, onBack }: { id: string; onBack: () => voi
         <button
           type="button"
           onClick={onBack}
-          className="flex-1 rounded-lg border border-slate-300 px-4 py-3 font-medium"
+          className={`flex-1 ${BUTTON_SECONDARY_CLASS}`}
         >
           Back
         </button>
@@ -91,7 +92,7 @@ export function InspectionDetail({ id, onBack }: { id: string; onBack: () => voi
           <button
             type="button"
             onClick={() => setIsResolving(true)}
-            className="flex-1 rounded-lg bg-emerald-700 px-4 py-3 font-medium text-white"
+            className="min-h-11 flex-1 rounded-lg bg-emerald-700 px-4 py-3 text-base font-medium text-white"
           >
             Resolve
           </button>

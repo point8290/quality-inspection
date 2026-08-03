@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import { today } from '../../../lib/formatDate';
+import { BUTTON_PRIMARY_CLASS, BUTTON_SECONDARY_CLASS, CONTROL_CLASS } from '../../../lib/styles';
 import { selectCreateError, selectCreateStatus, selectFieldError } from '../selectors';
 import { createFormReset, createRequested } from '../slice';
 
@@ -68,7 +69,7 @@ export function LogForm({ onDone }: { onDone: () => void }) {
           type="date"
           value={inspectionDate}
           onChange={(event) => setInspectionDate(event.target.value)}
-          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5"
+          className={CONTROL_CLASS}
           required
         />
         <FieldError path="inspectionDate" />
@@ -83,7 +84,7 @@ export function LogForm({ onDone }: { onDone: () => void }) {
           value={machineId}
           onChange={(event) => setMachineId(event.target.value)}
           placeholder="LOOM-04"
-          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5"
+          className={CONTROL_CLASS}
           required
         />
         <FieldError path="machineId" />
@@ -97,7 +98,7 @@ export function LogForm({ onDone }: { onDone: () => void }) {
           id="defectTypeCode"
           value={defectTypeCode}
           onChange={(event) => setDefectTypeCode(event.target.value)}
-          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5"
+          className={CONTROL_CLASS}
           required
         >
           <option value="">Select…</option>
@@ -118,7 +119,7 @@ export function LogForm({ onDone }: { onDone: () => void }) {
           id="severityCode"
           value={severityCode}
           onChange={(event) => setSeverityCode(event.target.value)}
-          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5"
+          className={CONTROL_CLASS}
           required
         >
           <option value="">Select…</option>
@@ -133,34 +134,34 @@ export function LogForm({ onDone }: { onDone: () => void }) {
 
       <div>
         <label htmlFor="remarks" className="block text-sm font-medium text-slate-700">
-          Remarks <span className="text-slate-400">(optional)</span>
+          Remarks <span className="text-slate-500">(optional)</span>
         </label>
         <textarea
           id="remarks"
           value={remarks}
           onChange={(event) => setRemarks(event.target.value)}
           rows={3}
-          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5"
+          className={CONTROL_CLASS}
         />
         <FieldError path="remarks" />
       </div>
 
       {status === 'failed' && error && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>
+        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm wrap-break-word text-red-800">{error}</p>
       )}
 
       <div className="flex gap-3">
         <button
           type="button"
           onClick={onDone}
-          className="flex-1 rounded-lg border border-slate-300 px-4 py-3 font-medium"
+          className={`flex-1 ${BUTTON_SECONDARY_CLASS}`}
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={!canSubmit}
-          className="flex-1 rounded-lg bg-slate-900 px-4 py-3 font-medium text-white disabled:opacity-40"
+          className={`flex-1 ${BUTTON_PRIMARY_CLASS}`}
         >
           {isSubmitting ? 'Saving…' : 'Log inspection'}
         </button>

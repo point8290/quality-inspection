@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
+import { BUTTON_PRIMARY_CLASS } from '../../lib/styles';
 import { summaryRequested } from './slice';
 
 function StatTile({ label, value }: { label: string; value: number }) {
@@ -27,13 +28,13 @@ export function SummaryView() {
 
   if (status === 'failed') {
     return (
-      <div className="p-6 text-center">
+      <div role="alert" className="p-6 text-center">
         <p className="font-medium text-red-700">Couldn’t load the summary</p>
         <p className="mt-1 text-sm text-slate-500">{error}</p>
         <button
           type="button"
           onClick={() => dispatch(summaryRequested())}
-          className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+          className={`mt-4 ${BUTTON_PRIMARY_CLASS}`}
         >
           Try again
         </button>

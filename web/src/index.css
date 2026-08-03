@@ -2,9 +2,14 @@
    PostCSS config. Design tokens, when we need them, go in an @theme block here. */
 @import 'tailwindcss';
 
-/* Mobile-first: the app is designed at 390px and stretched up, never shrunk down. */
 html,
-body,
-#root {
+body {
   height: 100%;
+}
+
+/* 100dvh, not 100% or 100vh: mobile browsers size the "large viewport" as if the address
+   bar were hidden, so a full-height shell gets clipped at the bottom and the tab bar jumps
+   as the bar collapses on scroll. dvh tracks the visible viewport instead. */
+#root {
+  height: 100dvh;
 }

@@ -8,6 +8,7 @@ import {
   selectPageMeta,
 } from '../selectors';
 import { filtersCleared, listRequested, pageChanged } from '../slice';
+import { BUTTON_PRIMARY_CLASS, BUTTON_SECONDARY_CLASS } from '../../../lib/styles';
 import { FilterBar } from './FilterBar';
 import { InspectionCard } from './InspectionCard';
 
@@ -25,13 +26,13 @@ function Results({ onSelect }: { onSelect: (id: string) => void }) {
 
   if (status === 'failed') {
     return (
-      <div className="p-6 text-center">
+      <div role="alert" className="p-6 text-center">
         <p className="font-medium text-red-700">Couldn’t load inspections</p>
         <p className="mt-1 text-sm text-slate-500">{error}</p>
         <button
           type="button"
           onClick={() => dispatch(listRequested())}
-          className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+          className={`mt-4 ${BUTTON_PRIMARY_CLASS}`}
         >
           Try again
         </button>
@@ -47,7 +48,7 @@ function Results({ onSelect }: { onSelect: (id: string) => void }) {
         <button
           type="button"
           onClick={() => dispatch(filtersCleared())}
-          className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+          className={`mt-4 ${BUTTON_PRIMARY_CLASS}`}
         >
           Clear filters
         </button>
@@ -76,7 +77,7 @@ function Results({ onSelect }: { onSelect: (id: string) => void }) {
             type="button"
             disabled={meta.page <= 1}
             onClick={() => dispatch(pageChanged(meta.page - 1))}
-            className="rounded-lg border border-slate-300 px-4 py-2 disabled:opacity-40"
+            className={BUTTON_SECONDARY_CLASS}
           >
             Previous
           </button>
@@ -87,7 +88,7 @@ function Results({ onSelect }: { onSelect: (id: string) => void }) {
             type="button"
             disabled={meta.page >= meta.totalPages}
             onClick={() => dispatch(pageChanged(meta.page + 1))}
-            className="rounded-lg border border-slate-300 px-4 py-2 disabled:opacity-40"
+            className={BUTTON_SECONDARY_CLASS}
           >
             Next
           </button>
