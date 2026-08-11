@@ -1,7 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
 import type {
-  ApiErrorDetail,
   CreateInspectionPayload,
   Inspection,
   InspectionFilters,
@@ -22,8 +21,6 @@ type InspectionsState = {
   listError: string | null;
   createStatus: 'idle' | 'submitting' | 'failed';
   createError: string | null;
-  /** Per-field messages straight from the server's 400 envelope, keyed by field path. */
-  createFieldErrors: ApiErrorDetail[];
   resolveStatus: 'idle' | 'submitting' | 'failed';
   resolveError: string | null;
   /**
@@ -44,7 +41,6 @@ const initialState: InspectionsState = {
   listError: null,
   createStatus: 'idle',
   createError: null,
-  createFieldErrors: [],
   resolveStatus: 'idle',
   resolveError: null,
   resolveConflict: false,
@@ -100,34 +96,43 @@ const inspectionsSlice = createSlice({
     createRequested(state, _action: PayloadAction<CreateInspectionPayload>) {
       state.createStatus = 'submitting';
       state.createError = null;
-      state.createFieldErrors = [];
     },
     /**
      * Optimistic: the row goes on screen before the server has seen it. If a filter is
      * active and the new inspection doesn't match it, the next list fetch corrects the view
      * — a moment of over-showing beats making the supervisor wait for a round trip.
+     *
+     * Upsert rather than prepend, because the form mints one id per inspection rather than
+     * one per attempt: the same row can legitimately arrive twice, and it must collapse to
+     * one card with the total counted once.
      */
     createSucceeded(state, action: PayloadAction<Inspection>) {
-      state.items.unshift(action.payload);
-      if (state.meta) {
-        state.meta.total += 1;
+      const existing = state.items.findIndex((item) => item.id === action.payload.id);
+
+      if (existing === -1) {
+        state.items.unshift(action.payload);
+        if (state.meta) {
+          state.meta.total += 1;
+        }
+      } else {
+        state.items[existing] = action.payload;
       }
+
       state.createStatus = 'idle';
       state.createError = null;
-      state.createFieldErrors = [];
     },
-    createFailed(
-      state,
-      action: PayloadAction<{ message: string; fieldErrors: ApiErrorDetail[] }>,
-    ) {
+    /**
+     * Only reached if queueing the write itself fails. Server-side validation failures no
+     * longer land here — every write goes through the outbox, so a rejected payload becomes
+     * a dead letter during the drain instead (DESIGN.md §5.2).
+     */
+    createFailed(state, action: PayloadAction<string>) {
       state.createStatus = 'failed';
-      state.createError = action.payload.message;
-      state.createFieldErrors = action.payload.fieldErrors;
+      state.createError = action.payload;
     },
     createFormReset(state) {
       state.createStatus = 'idle';
       state.createError = null;
-      state.createFieldErrors = [];
     },
 
     resolveRequested(state, _action: PayloadAction<{ id: string; resolutionNote: string }>) {

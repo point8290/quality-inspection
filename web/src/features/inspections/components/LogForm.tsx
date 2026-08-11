@@ -2,14 +2,8 @@ import { useEffect, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import { today } from '../../../lib/formatDate';
 import { BUTTON_PRIMARY_CLASS, BUTTON_SECONDARY_CLASS, CONTROL_CLASS } from '../../../lib/styles';
-import { selectCreateError, selectCreateStatus, selectFieldError } from '../selectors';
+import { selectCreateError, selectCreateStatus } from '../selectors';
 import { createFormReset, createRequested } from '../slice';
-
-/** Shows the server's message for one field under the input it belongs to. */
-function FieldError({ path }: { path: string }) {
-  const message = useAppSelector(selectFieldError(path));
-  return message ? <p className="mt-1 text-xs text-red-700">{message}</p> : null;
-}
 
 export function LogForm({ onDone }: { onDone: () => void }) {
   const dispatch = useAppDispatch();
@@ -23,6 +17,17 @@ export function LogForm({ onDone }: { onDone: () => void }) {
   const [severityCode, setSeverityCode] = useState('');
   const [remarks, setRemarks] = useState('');
   const [submitted, setSubmitted] = useState(false);
+
+  /**
+   * One id for this inspection, not one per attempt — so a double tap or a retry carries the
+   * same id and the server's idempotent create collapses it into a single row. (This is the
+   * synchronizer-token pattern: the token is issued when the form is rendered, not when it
+   * is submitted.)
+   *
+   * Relies on the form unmounting between inspections, which App does by rendering it
+   * conditionally. If it ever stays mounted, regenerate this after a successful submit.
+   */
+  const [draftId] = useState(() => crypto.randomUUID());
 
   // Close once the submit that this form started has succeeded.
   useEffect(() => {
@@ -42,9 +47,7 @@ export function LogForm({ onDone }: { onDone: () => void }) {
 
     dispatch(
       createRequested({
-        // The client mints the id, which is what makes a replayed create idempotent
-        // when this goes through the offline outbox in Phase 6 (DESIGN.md §5).
-        id: crypto.randomUUID(),
+        id: draftId,
         inspectionDate,
         machineId: machineId.trim(),
         defectTypeCode,
@@ -72,7 +75,6 @@ export function LogForm({ onDone }: { onDone: () => void }) {
           className={CONTROL_CLASS}
           required
         />
-        <FieldError path="inspectionDate" />
       </div>
 
       <div>
@@ -87,7 +89,6 @@ export function LogForm({ onDone }: { onDone: () => void }) {
           className={CONTROL_CLASS}
           required
         />
-        <FieldError path="machineId" />
       </div>
 
       <div>
@@ -108,7 +109,6 @@ export function LogForm({ onDone }: { onDone: () => void }) {
             </option>
           ))}
         </select>
-        <FieldError path="defectTypeCode" />
       </div>
 
       <div>
@@ -129,7 +129,6 @@ export function LogForm({ onDone }: { onDone: () => void }) {
             </option>
           ))}
         </select>
-        <FieldError path="severityCode" />
       </div>
 
       <div>
@@ -143,7 +142,6 @@ export function LogForm({ onDone }: { onDone: () => void }) {
           rows={3}
           className={CONTROL_CLASS}
         />
-        <FieldError path="remarks" />
       </div>
 
       {status === 'failed' && error && (

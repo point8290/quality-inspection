@@ -122,6 +122,186 @@ curl -X PATCH http://localhost:4000/api/inspections/<id>/resolve \
 
 ---
 
+## Data model
+
+There are two databases: SQLite on the server, IndexedDB on the device. They are **not** the same
+schema, and the difference is deliberate — the server stores normalised rows, the device stores
+the API's response shape.
+
+### Server — SQLite
+
+Four tables. Two lookups (`severities`, `defect_types`) that `inspections` points at, plus
+`webhook_events` — the inbound SAP log that points back at whatever inspection it produced.
+
+```mermaid
+erDiagram
+    severities   ||--o{ inspections    : "severityId"
+    defect_types ||--o{ inspections    : "defectTypeId"
+    inspections  ||--o| webhook_events : "inspectionId"
+
+    severities {
+        integer id PK "autoincrement"
+        string  code UK "CRITICAL | MAJOR | MINOR"
+        string  label
+        integer rank UK "0 = most severe"
+    }
+
+    defect_types {
+        integer id PK "autoincrement"
+        string  code UK "HOLE, STAIN, OTHER..."
+        string  label
+        boolean isActive "soft-retire, default true"
+        integer sortOrder "default 0"
+        string  sapCode UK "nullable - SAP catalogue code"
+    }
+
+    inspections {
+        uuid     id PK "client-minted offline"
+        dateonly inspectionDate "YYYY-MM-DD, no timezone"
+        string   machineId
+        integer  defectTypeId FK
+        integer  severityId FK
+        string   remarks "nullable"
+        string   status "OPEN | RESOLVED"
+        string   resolutionNote "nullable"
+        date     resolvedAt "nullable"
+        string   source "MANUAL | SAP"
+        string   externalRef UK "nullable - SAP idempotency key"
+        date     createdAt
+        date     updatedAt
+    }
+
+    webhook_events {
+        uuid    id PK
+        string  eventId UK "SAP idempotency key"
+        string  source "SAP"
+        text    payload "raw body for audit/replay"
+        string  status "RECEIVED | PROCESSED | FAILED"
+        integer deliveryCount "default 1"
+        text    error "nullable"
+        uuid    inspectionId FK "nullable until processed"
+        date    receivedAt
+        date    processedAt "nullable until success"
+    }
+```
+
+A few things the shapes are saying:
+
+- **`inspections.id` is a UUID, not an autoincrement**, because the phone mints it before the row
+  exists on the server. That's what makes a replayed create idempotent — see
+  [One idempotency principle](#architecture-decisions) below.
+- **`webhook_events` is zero-or-one per inspection.** Nothing structural enforces that; the unique
+  `eventId` and unique `externalRef` do, together.
+- **`inspectionId` and `processedAt` are nullable on purpose.** Both stay null until processing
+  succeeds, so `processedAt IS NULL` is an exact query for "received but never handled" — the
+  dead-letter state is representable rather than an error case.
+- **Indexes on `inspections`:** every column the list can filter or sort by
+  (`status`, `severityId`, `defectTypeId`, `inspectionDate`, `createdAt`), plus `updatedAt` for the
+  offline delta pull and a unique index on `externalRef`.
+
+`status` deliberately isn't a fifth table — the rule is classification → lookup table, workflow
+state → plain string.
+
+### Device — IndexedDB (Dexie)
+
+Five object stores, declared in one place ([`web/src/offline/db.ts`](web/src/offline/db.ts)). Three
+jobs: **read** offline (`inspections`, `reference`), **write** offline (`outbox`, `deadLetter`),
+and **remember where we got to** (`meta`).
+
+Relationships are dashed because IndexedDB has no foreign keys — object stores are independent,
+and these links are conventions the sync saga maintains, not constraints the database enforces.
+
+```mermaid
+erDiagram
+    inspections ||..o{ outbox     : "inspectionId"
+    inspections ||..o{ deadLetter : "inspectionId"
+
+    inspections {
+        string id PK "same UUID as the server row"
+        object defectType "embedded code + label"
+        object severity "embedded code + label + rank"
+        string status "indexed"
+        string updatedAt "indexed - newest-first ordering"
+        string _rest "full API response shape"
+    }
+
+    reference {
+        string key PK "always 'reference'"
+        object value "defectTypes[] + severities[] snapshot"
+    }
+
+    outbox {
+        integer seq PK "++autoincrement = FIFO replay order"
+        string  opId "indexed - uuid"
+        string  type "CREATE | RESOLVE"
+        string  inspectionId "indexed"
+        object  payload "the request body to replay"
+    }
+
+    deadLetter {
+        string opId PK
+        string type "CREATE | RESOLVE"
+        string inspectionId
+        string reason "why the server rejected it"
+        string failedAt
+    }
+
+    meta {
+        string key PK "'updatedSince'"
+        string value "ISO cursor for the delta pull"
+    }
+```
+
+- **`inspections` is denormalised on purpose.** It stores what `GET /api/inspections` returned —
+  `defectType` and `severity` embedded as `{ code, label }` — not the server's `defectTypeId` /
+  `severityId`. Surrogate ids never leave the backend, so the device has nothing to join on and
+  doesn't need one: a cached row renders without a lookup.
+- **`outbox.seq` is a Dexie `++autoincrement`, and that is a correctness requirement.** A CREATE
+  and the RESOLVE of the same inspection share an `inspectionId`, so the create must replay first.
+  FIFO ordering comes free from the key.
+- **`deadLetter` is terminal.** Ops the server rejected with a 400 — unfixable by retrying, so
+  they leave the queue and become visible instead of blocking it forever.
+- **`meta` holds one row today**, the `updatedSince` cursor. A key/value store rather than a
+  dedicated table so the next small scalar doesn't need a schema version bump.
+
+### How the two line up
+
+```mermaid
+flowchart LR
+    subgraph device["📱 Device — IndexedDB"]
+        M["inspections<br/>(read mirror)"]
+        O["outbox<br/>(pending writes)"]
+        C["meta.updatedSince<br/>(cursor)"]
+        R["reference<br/>(snapshot)"]
+    end
+
+    subgraph server["🖥️ Server — SQLite"]
+        SI["inspections"]
+        SL["severities<br/>defect_types"]
+    end
+
+    O -- "drain: POST / PATCH<br/>keyed by inspections.id" --> SI
+    SI -- "delta pull: updatedAt &gt; cursor" --> M
+    SI -- "max(updatedAt)" --> C
+    SL -- "GET /severities, /defect-types" --> R
+```
+
+Four correspondences are worth knowing by name:
+
+| Device | Server | What ties them |
+|---|---|---|
+| `inspections.id` | `inspections.id` | **The same UUID.** Minted on the device before the row exists on the server — this is what makes a replayed create idempotent rather than duplicating. |
+| `outbox.inspectionId` | `inspections.id` | The queued op names the row it will create or resolve, so a drain needs no server-assigned id to proceed. |
+| `meta.updatedSince` | `inspections.updatedAt` | The delta-pull cursor. The server's `updatedAt` index exists for exactly this query. |
+| `reference.value` | `severities`, `defect_types` | A codes-and-labels snapshot — no ids, because the API speaks in codes. |
+
+The mirror is a **cache, not a peer**: the server is the only source of truth, and a conflict is
+always resolved server-side (resolve-once is a conditional `UPDATE`, not a client decision). The
+device's job is to hold enough state to keep working during an outage and to replay it safely
+afterwards.
+
+---
+
 ## Architecture decisions
 
 **Sequelize over Prisma.** I wanted to own my migrations directly — hand-written

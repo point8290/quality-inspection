@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Inspection } from '../../api/types';
 import {
+  createSucceeded,
   filtersChanged,
   filtersCleared,
   inspectionsReducer,
@@ -97,6 +98,31 @@ describe('inspections reducer — filters, sort and paging', () => {
 
   it('defaults to newest first', () => {
     expect(initialState.sort).toEqual({ sortBy: 'createdAt', sortDir: 'desc' });
+  });
+});
+
+describe('inspections reducer — optimistic create', () => {
+  it('puts the new row at the top and counts it once', () => {
+    const state = inspectionsReducer(stateWithTwoRows(), createSucceeded(inspection('c')));
+
+    expect(state.items.map((item) => item.id)).toEqual(['c', 'a', 'b']);
+    expect(state.meta?.total).toBe(3);
+  });
+
+  it('collapses a repeated create into one row', () => {
+    // The form mints one id per inspection rather than one per attempt, so a double tap
+    // sends the same id twice and this reducer can be handed the same row twice. It has to
+    // replace rather than prepend again — otherwise the list shows two identical cards
+    // (with duplicate React keys) and the total is inflated.
+    const once = inspectionsReducer(stateWithTwoRows(), createSucceeded(inspection('c')));
+    const twice = inspectionsReducer(
+      once,
+      createSucceeded(inspection('c', { machineId: 'LOOM-99' })),
+    );
+
+    expect(twice.items.map((item) => item.id)).toEqual(['c', 'a', 'b']);
+    expect(twice.items[0].machineId).toBe('LOOM-99');
+    expect(twice.meta?.total).toBe(3);
   });
 });
 

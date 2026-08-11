@@ -155,12 +155,7 @@ export function* submitCreate(
     yield put(syncRequested());
     yield put(summaryRequested());
   } catch (error) {
-    yield put(
-      createFailed({
-        message: error instanceof Error ? error.message : 'Unknown error',
-        fieldErrors: [],
-      }),
-    );
+    yield put(createFailed(error instanceof Error ? error.message : 'Unknown error'));
   }
 }
 
